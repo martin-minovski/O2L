@@ -1,37 +1,29 @@
-// On BelaMini, this runs out of the box using P2.25
-//
-// On Bela, this only works if you sacrifice the audio input and perform a hw
-// mod and load a dedicated device-tree overlay.
-// Hardware mod:
-// - remove the Bela cape
-// - bend pin P9.30 out so that it doesn't enter the BeagleBone Black
-// - insert a wire into P9.30 on the BeagleBone Black or solder it to its pad at the back of the BeagleBone Black
-// - re-insert the Bela cape
-// Loading device tree overlay:
-// - get the latest from https://github.com/BelaPlatform/bb.org-overlays into /opt/bb.org-overlays
-// - run `make all install`
-// - reboot
-// - use PinmuxUtils::set() to set the pin's mode to SPI (this is done below in setup() for you)
-// Using it:
-// - now connect P9.30 to your neopixel-like strip. *IMPORTANT*: solder a wire
-// to P9.30 from the BeagleBone Black's back, or insert a wire into the socket
-// between the Bela cape and the BeagelBone Black, but do _not_ get the signal
-// from the Bela cape's socket. This output is 3.3V so possibly, depending on
-// your specific device, you may need a level shifter
-#include <AddressableLeds.h>
-#include <vector>
-#include <libraries/Trill/Trill.h>
+
+#include <Bela.h>
 #include <cmath>
-#include <MiscUtilities.h>
 #include <libraries/OscReceiver/OscReceiver.h>
 #include <signal.h>
+#include "apa102.hpp"
 
-const int gLocalPort = 7562; //port for incoming OSC messages
-uint8_t kNumLeds = 23; // number of LEDs on the strip
+const int gLocalPort = 7562; // port for incoming OSC messages
+const short kNumLeds = 300;  // number of LEDs on the strip
 
-static AddressableLeds gLeds;
+bool DEBUG = false;
+
+const int CLOCK_PIN = 30;  // BBB P9.11
+const int DATA_PIN = 31;   // BBB P9.13
+
+APA102_BELA * gLeds;
 static OscReceiver oscReceiver;
-static constexpr uint8_t kBytesPerRgb = AddressableLeds::kBytesPerRgb;
+static constexpr uint8_t kNumbersPerRgb = 4;        // brightness + rgb
+static constexpr uint8_t kNumbersPerMonochrome = 2; // brightness + color
+const int MAX_BRIGHTNESS = 31;
+const int MAX_RGB = 255;
+
+uint8_t brightness[kNumLeds];
+uint8_t red[kNumLeds];
+uint8_t green[kNumLeds];
+uint8_t blue[kNumLeds];
 
 static bool gStop;
 // Handle Ctrl-C by requesting that the audio rendering stop
@@ -43,9 +35,15 @@ static void interrupt_handler(int var)
 template <typename T>
 static uint8_t clipForLed(T val)
 {
-	return val > 255 ? 255 : val;
+	return val < 0 ? 0 : val > 255 ? 255 : val;
 }
-static std::vector<uint8_t> gRgb(kNumLeds * kBytesPerRgb);
+
+template <typename T>
+static uint8_t clipForBrightness(T val)
+{
+	return val < 0 ? 0 : val > 31 ? 31 : val;
+}
+
 int parseMessage(oscpkt::Message msg, const char* address, void*)
 {
 	oscpkt::Message::ArgReader args = msg.arg();
@@ -54,7 +52,7 @@ int parseMessage(oscpkt::Message msg, const char* address, void*)
 		kWrongArguments,
 		kUnmatchedPattern,
 	} error = kOk;
-	printf("Message from %s; %s\n", address, msg.addressPattern().c_str());
+	if (DEBUG) printf("Message from %s; %s\n", address, msg.addressPattern().c_str());
 	// check state (non-display) messages first
 	std::string baseAddr = "/leds/setRaw";
 	if (msg.partialMatch(baseAddr)) {
@@ -77,46 +75,69 @@ int parseMessage(oscpkt::Message msg, const char* address, void*)
 			error = kUnmatchedPattern;
 		if(kOk == error)
 		{
-			size_t start;
-			args.popNumber(start);
-			start *= kBytesPerRgb;
+			int startPixel;
+			args.popInt32(startPixel);
 			float gain;
 			args.popNumber(gain);
 			size_t numArgs = args.nbArgRemaining();
-			if(!numArgs || (kRgb == color && numArgs % kBytesPerRgb) || !args.isOk())
-				error = kWrongArguments;
+			if(
+				startPixel < 0
+				|| startPixel >= kNumLeds
+				|| (kRgb == color && numArgs % kNumbersPerRgb) 
+				|| (kRgb != color && numArgs % kNumbersPerMonochrome) 
+				|| !args.isOk()
+			) error = kWrongArguments;
 			else {
-				int n = 0;
-				while(args.nbArgRemaining() && n < gRgb.size())
+				int n = startPixel;
+				while(args.nbArgRemaining() && n < kNumLeds)
 				{
+					float brightnessFloat;
+					args.popNumber(brightnessFloat);
+					brightness[n] = clipForBrightness(std::round(brightnessFloat * MAX_BRIGHTNESS));
 					float val;
 					args.popNumber(val);
 					if(!args.isOk()) {
 						error = kWrongArguments;
 						break;
 					}
-					uint8_t ledValue = clipForLed(val * gain);
-					// now use the retrieved value
-					if(kRgb == color)
-					{
-						// in kRgb mode, set each color per each LED in order
-						gRgb[start + n] = ledValue;
-						++n;
-					} else {
-						// in monochrome mode, set the corresponding color
-						// and zero out the rest
-						for(size_t c = 0; c < kBytesPerRgb; ++c)
-						{
-							if(color == c)
-								gRgb[start + n] = ledValue;
-							else
-								gRgb[start + n] = 0;
-							++n;
-						}
+					uint8_t ledValue = clipForLed(std::round(val * gain * MAX_RGB));
+					
+					// in monochrome mode, set the corresponding color
+					// and zero out the rest
+					switch (color) {
+						case kR:
+							red[n] = ledValue;
+							break;
+						case kG:
+							green[n] = ledValue;
+							break;
+						case kB:
+							blue[n] = ledValue;
+							break;
+						break;
+						default:
+							// in kRgb mode, set each color per each LED in order
+							red[n] = ledValue;
+							if (args.nbArgRemaining()) {
+								args.popNumber(val);
+								ledValue = clipForLed(std::round(val * gain * MAX_RGB));
+								green[n] = ledValue;
+							}
+							if (args.nbArgRemaining()) {
+								args.popNumber(val);
+								ledValue = clipForLed(std::round(val * gain * MAX_RGB));
+								blue[n] = ledValue;
+							}
+						break;
 					}
+					++n;
 				}
-				if(kOk == error)
-					gLeds.send(gRgb);
+				if(kOk == error) {
+					for (n = 0; n < kNumLeds; n++) {
+						gLeds->setPixel(n, brightness[n], red[n], green[n], blue[n]);
+					}
+					gLeds->show();
+				}
 			}
 		}
 	} else
@@ -144,12 +165,19 @@ int parseMessage(oscpkt::Message msg, const char* address, void*)
 
 int main(int argc, char* argv[])
 {
-	PinmuxUtils::set("P9_30", "spi"); // works on Bela, prints error on BelaMini
-	PinmuxUtils::set("P2_25", "spi"); // works on BelaMini, prints error on Bela
-
-	if(gLeds.setup("/dev/spidev2.1"))
-		return 1;
-	// OSC
+	if (gpio_export(CLOCK_PIN)) printf("Warning: couldn't export clock pin\n");
+	if (gpio_set_dir(CLOCK_PIN, OUTPUT_PIN)) printf("Warning: couldn't set direction of clock pin\n");
+	if (gpio_export(DATA_PIN)) printf("Warning: couldn't export data pin\n");
+	if (gpio_set_dir(DATA_PIN, OUTPUT_PIN)) printf("Warning: couldn't set direction of data pin\n");
+	
+	for (int i = 0; i < kNumLeds; i++) {
+		brightness[i] = 0;
+		red[i] = 0;
+		green[i] = 0;
+		blue[i] = 0;
+	}
+	
+	gLeds = new APA102_BELA(kNumLeds);
 	oscReceiver.setup(gLocalPort, parseMessage);
 
 	gStop = false;
