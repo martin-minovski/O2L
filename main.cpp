@@ -107,11 +107,17 @@ int parseMessage(oscpkt::Message msg, const char* address, void*)
 					switch (color) {
 						case kR:
 							red[n] = ledValue;
+							green[n] = 0;
+							blue[n] = 0;
 							break;
 						case kG:
+							red[n] = 0;
 							green[n] = ledValue;
+							blue[n] = 0;
 							break;
 						case kB:
+							red[n] = 0;
+							green[n] = 0;
 							blue[n] = ledValue;
 							break;
 						break;
