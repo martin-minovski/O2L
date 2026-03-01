@@ -1,7 +1,7 @@
-// APA102 SPI bit-bang PRU code for Bela2 / PocketBeagle2
+// APA102 SPI bit-bang PRU code for Bela Gem / PocketBeagle2
 //
 // Clocks out APA102 frames using two GPIO pins (clock + data)
-// via the PRU on bela2's SoC.
+// via the PRU on bela gem's SoC.
 //
 // PRU-side pin numbers may differ from Linux-side GPIO numbers.
 // Adjust GPIO_CLOCK_PIN and GPIO_DATA_PIN below to match the
