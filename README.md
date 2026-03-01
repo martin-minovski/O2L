@@ -9,6 +9,12 @@ By default, it is configured for the following pins:
 * **Clock Pin:** Linux GPIO 49 *(Mapped to PRU Bank 1, Bit 17)*
 * **Data Pin:** Linux GPIO 50 *(Mapped to PRU Bank 1, Bit 18)*
 
+**Pin Configuration (Required after every boot):**
+```bash
+devmem2 0xf40c8 w 0x00040007
+devmem2 0xf40cc w 0x00040007
+```
+
 > This setup works fine using the board's native 3.3V logic **only** if you keep the brightness settings very low. If you plan to run the LEDs at higher brightness levels or use a long strip, you will need a logic level shifter (to step up to 5V) and a dedicated external power supply to avoid drawing too much current and damaging your board.
 
 ### OSC Message Format
