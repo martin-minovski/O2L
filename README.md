@@ -1,9 +1,9 @@
-# OSC to APA102 Bridge for Bela2 / PocketBeagle2
+# OSC to APA102 Bridge for Bela Gem / PocketBeagle2
 
 An OSC to APA102 addressable LED bridge for Linux, built using Bela's `OscReceiver` and `UdpServer` classes. 
 
 ### Hardware Setup
-This version uses the PRU on the Bela2 / PocketBeagle2 SoC to bit-bang the 2-wire signal (clock and data) required by APA102 strips. 
+This version uses the PRU on the Bela Gem / PocketBeagle2 SoC to bit-bang the 2-wire signal (clock and data) required by APA102 strips. 
 
 By default, it is configured for the following pins:
 * **Clock Pin:** Linux GPIO 49 *(Mapped to PRU Bank 1, Bit 17)*
