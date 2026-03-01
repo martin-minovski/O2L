@@ -10,9 +10,6 @@ const short kNumLeds = 300;  // number of LEDs on the strip
 
 bool DEBUG = false;
 
-const int CLOCK_PIN = 30;  // BBB P9.11
-const int DATA_PIN = 31;   // BBB P9.13
-
 APA102_BELA * gLeds;
 static OscReceiver oscReceiver;
 static constexpr uint8_t kNumbersPerRgb = 4;        // brightness + rgb
@@ -171,11 +168,6 @@ int parseMessage(oscpkt::Message msg, const char* address, void*)
 
 int main(int argc, char* argv[])
 {
-	if (gpio_export(CLOCK_PIN)) printf("Warning: couldn't export clock pin\n");
-	if (gpio_set_dir(CLOCK_PIN, OUTPUT_PIN)) printf("Warning: couldn't set direction of clock pin\n");
-	if (gpio_export(DATA_PIN)) printf("Warning: couldn't export data pin\n");
-	if (gpio_set_dir(DATA_PIN, OUTPUT_PIN)) printf("Warning: couldn't set direction of data pin\n");
-	
 	for (int i = 0; i < kNumLeds; i++) {
 		brightness[i] = 0;
 		red[i] = 0;

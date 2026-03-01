@@ -1,21 +1,21 @@
-
 #ifndef _apa102_hpp_
 #define _apa102_hpp_
 #include "pru.h"
 
 struct apa102_command_t {
-  // DDR shared with the PRU
-  uintptr_t data_address;
+  // Offset into PRU data RAM where pixel data begins.
+  // Must be uint32_t (not uintptr_t) to match the 32-bit PRU's view of this struct.
+  volatile uint32_t data_address;
 
-  // Length in bytes of each LED frame
-  unsigned num_bytes;
+  // Total bytes of LED frame data
+  volatile uint32_t num_bytes;
 
-  // Write 1 to start, 0xFF to abort. will be cleared when started
-  volatile unsigned command;
+  // Write 1 to start, 0xFF to abort. Cleared by PRU when acknowledged.
+  volatile uint32_t command;
 
-  // This will have a non-zero response written when done
-  volatile unsigned response;
-  apa102_command_t(unsigned _num_bytes)
+  // Non-zero response written by PRU when done
+  volatile uint32_t response;
+  apa102_command_t(uint32_t _num_bytes)
       : data_address(0), num_bytes(_num_bytes), command(0), response(0) {};
 
 } __attribute__((__packed__));
@@ -28,7 +28,7 @@ class APA102_BELA {
   size_t buffer_size;
   uint32_t data_len;
   static const int NUM_BYTES = 4;
-  
+  static const int DATA_OFFSET = 64;
 
 public:
   APA102_BELA(uint16_t pixel_count);

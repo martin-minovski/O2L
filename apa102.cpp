@@ -1,26 +1,42 @@
 #include "apa102.hpp"
-#include "apa102_bin.h"
+#include "apa102.h"
 #include <iostream>
 #include <cstring>
 #include <algorithm>
-#define DATA_OFFSET 64
+
+#if ENABLE_PRU_UIO
+#include "apa102_bin.h"
+#endif
+
+enum {
+	GPIO0 = 0,
+	GPIO1 = 1,
+	GPIO2 = 2,
+	GPIO3 = 3,
+};
 
 APA102_BELA::APA102_BELA(uint16_t pixel_count)
     : pru0(pru_init(0)), num_pixels(pixel_count), buffer_size(pixel_count * NUM_BYTES) {
     	
 	current_buffer_num = 0;
-	data_len = (unsigned) pixel_count*NUM_BYTES;
+	data_len = (uint32_t)pixel_count * NUM_BYTES;
 	if (2 * buffer_size > pru0->data_ram_size-DATA_OFFSET) {
 		die("Pixel data needs at least 2 * %zu, only %zu available in data ram\n", buffer_size, pru0->data_ram_size-DATA_OFFSET);
 	}
 	
 	apa102 = (apa102_command_t *)pru0->data_ram;
 	*(apa102) = apa102_command_t(data_len);
-	
-	// Initiate the PRU0 program
+
+	pru_gpio(GPIO_BANK, GPIO_CLOCK_PIN, 1, 0);
+	pru_gpio(GPIO_BANK, GPIO_DATA_PIN, 1, 0);
+
+#if ENABLE_PRU_UIO
 	pru_exec_code(pru0, PRUcode, sizeof(PRUcode));
-  	
-	// Watch for a done response that indicates a proper startup
+#endif
+#if ENABLE_PRU_RPROC
+	pru_exec_file(pru0, "apa102.out");
+#endif
+
 	std::cout << "Waiting for initial response from PRU0... ";
 	while (!apa102->response);
 	std::cout << "OK" << std::endl;
@@ -35,8 +51,8 @@ void APA102_BELA::show(void) {
 	// Wait for any current command to have been acknowledged
 	while (apa102->command);
 
-	*(uint32_t *)(pru0->data_ram) = DATA_OFFSET + current_buffer_num*data_len;
-	
+	apa102->data_address = DATA_OFFSET + current_buffer_num * data_len;
+
 	// Send the start command
 	apa102->command = 1;
 	
@@ -45,7 +61,7 @@ void APA102_BELA::show(void) {
 
 void APA102_BELA::setPixel(int n, uint8_t brightness, uint8_t red, uint8_t green, uint8_t blue) {
   if (n < num_pixels) {
-  	uint8_t preamble = static_cast<uint8_t>(224) + brightness; // first 3 bytes are always "111"
+  	uint8_t preamble = static_cast<uint8_t>(224) + brightness;
     uint8_t values[NUM_BYTES] = {preamble, blue, green, red};
     setRamBytes(n, values);
   }
@@ -77,4 +93,3 @@ uint32_t APA102_BELA::wait() {
     }
   }
 }
-
